@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ёжик в тумане</title>
+  <meta name="description" content="Сайт о мультфильме Юрия Норштейна «Ёжик в тумане». Без единой картинки: туман, звёзды и сам Ёжик нарисованы кодом прямо в браузере.">
+  <meta name="theme-color" content="#0b1020">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='32' fill='%230b1020'/%3E%3Cpath d='M12 40c0-12 9-20 20-20 6 0 10 3 14 8l8 6-8 2c-4 4-9 6-14 6H16z' fill='%236b5b4e'/%3E%3Ccircle cx='40' cy='31' r='2.6' fill='%23f4efe6'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500;1,600&family=Lora:ital,wght@0,400;0,500;1,400&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<canvas id="sky" aria-hidden="true"></canvas>
+
+<main>
+
+  <!-- ============ Начало ============ -->
+  <header class="hero" data-scene="hero">
+    <p class="hero__meta">Юрий Норштейн <span>·</span> Союзмультфильм <span>·</span> 1975</p>
+    <h1 class="hero__title">Ёжик<br><em>в тумане</em></h1>
+    <p class="hero__lead">
+      Десять минут, в которых нет ни злодея, ни погони. В&nbsp;2003&nbsp;году аниматоры и&nbsp;критики
+      со&nbsp;всего мира назвали этот мультфильм лучшим в&nbsp;истории.
+    </p>
+    <p class="hero__lead hero__lead--quiet">
+      На этом сайте нет ни&nbsp;одной картинки. Туман, звёзды и&nbsp;сам Ёжик рисуются
+      кодом — прямо сейчас, у&nbsp;тебя в&nbsp;браузере.
+    </p>
+    <p class="hero__hint" id="hint"><span class="hint-pointer">Проведи рукой по туману</span><span class="hint-touch">Коснись тумана пальцем</span></p>
+    <a class="hero__down" href="#ch1">Иди за Ёжиком <span aria-hidden="true">↓</span></a>
+  </header>
+
+  <!-- ============ История ============ -->
+  <section class="story" aria-label="История">
+
+    <article class="chapter" id="ch1" data-scene="evening">
+      <p class="chapter__num">I</p>
+      <h2 class="chapter__title">Каждый вечер</h2>
+      <p>Каждый вечер Ёжик ходил к&nbsp;Медвежонку считать звёзды. Они садились рядом,
+        пили чай с&nbsp;малиновым вареньем и&nbsp;смотрели на&nbsp;небо над крышей.</p>
+      <p>Справа от печной трубы были звёзды Медвежонка. Слева — звёзды Ёжика.</p>
+    </article>
+
+    <article class="chapter" data-scene="fog">
+      <p class="chapter__num">II</p>
+      <h2 class="chapter__title">Туман</h2>
+      <p>В этот вечер Ёжик нёс узелок с&nbsp;вареньем через лес. А&nbsp;внизу, в&nbsp;овраге,
+        лежал туман — белый и&nbsp;такой густой, что казалось, его можно зачерпнуть ложкой.</p>
+    </article>
+
+    <article class="chapter" data-scene="horse">
+      <p class="chapter__num">III</p>
+      <h2 class="chapter__title">Белая Лошадь</h2>
+      <p>А в тумане стояла Лошадь. Только голова и&nbsp;спина — остальное растворилось.</p>
+      <blockquote>«Интересно, — подумал Ёжик, — если Лошадь ляжет спать,
+        она захлебнётся в&nbsp;тумане?»</blockquote>
+      <p>И пошёл вниз — посмотреть.</p>
+      <p class="echo" aria-hidden="true"><span>Лошадь!..</span> <span>Лошадь!..</span> <span>Лошадь!..</span></p>
+    </article>
+
+    <article class="chapter" data-scene="owl">
+      <p class="chapter__num">IV</p>
+      <h2 class="chapter__title">Кто-то рядом</h2>
+      <p>В тумане не видно даже собственной лапы. Зато слышно всё: как падает лист,
+        как дышит река, как за спиной кто-то шуршит.</p>
+      <p>Это Филин. Он идёт следом и&nbsp;повторяет за&nbsp;Ёжиком каждое слово — просто так,
+        от&nbsp;скуки.</p>
+    </article>
+
+    <article class="chapter" data-scene="river">
+      <p class="chapter__num">V</p>
+      <h2 class="chapter__title">Река</h2>
+      <p>Ёжик потерял узелок — и&nbsp;большой лохматый пёс принёс его в&nbsp;зубах. Потом Ёжик
+        оступился и&nbsp;упал в&nbsp;реку.</p>
+      <blockquote>«Пусть река сама несёт меня», — решил он.</blockquote>
+      <p>И кто-то, кого он так и&nbsp;не&nbsp;разглядел, тихо поднял его из&nbsp;воды и&nbsp;вынес на&nbsp;берег.</p>
+    </article>
+
+    <article class="chapter" data-scene="together">
+      <p class="chapter__num">VI</p>
+      <h2 class="chapter__title">Вместе</h2>
+      <p class="echo echo--warm" aria-hidden="true"><span>Ёжик!..</span> <span>Ё-ё-жик!..</span></p>
+      <p>Медвежонок кричал на&nbsp;весь лес. Он развёл костёр, вскипятил самовар
+        и&nbsp;всё ждал, ждал, ждал.</p>
+      <p>Потом они снова сидели рядом и&nbsp;считали звёзды. А&nbsp;Ёжик всё думал:
+        как там Лошадь — в&nbsp;тумане?</p>
+    </article>
+
+    <div class="interlude" data-scene="calm">
+      <p>Этому мультфильму больше пятидесяти лет. Его до сих пор смотрят по&nbsp;всему миру,
+        и&nbsp;никто толком не&nbsp;может объяснить, почему от&nbsp;него так щемит в&nbsp;груди.</p>
+      <p>Зато можно объяснить, <em>как</em> он сделан. И&nbsp;тут начинается самое интересное.</p>
+    </div>
+  </section>
+
+  <!-- ============ Как это сделано ============ -->
+  <section class="block" id="layers" data-scene="calm">
+    <div class="block__head">
+      <p class="kicker">Как это сделано</p>
+      <h2>Туман из&nbsp;папиросной бумаги</h2>
+      <p>Норштейн не&nbsp;рисовал сцену на&nbsp;одном листе. Небо, лес, Ёжик, трава — каждый лежал
+        на&nbsp;своём стекле, одно над&nbsp;другим, а&nbsp;камера смотрела на&nbsp;эту стопку сверху,
+        сквозь все стёкла сразу.</p>
+      <p>А туман — это тонкая калька. Её клали поверх Ёжика и&nbsp;поднимали к&nbsp;камере
+        буквально по&nbsp;миллиметру, кадр за&nbsp;кадром. И&nbsp;Ёжик медленно растворялся.</p>
+    </div>
+
+    <div class="mp">
+      <div class="mp__stage" id="mp-stage">
+        <div class="mp__stack" id="mp-stack">
+          <div class="mp__layer" style="--i:0"><canvas width="800" height="500"></canvas><span class="mp__label">стекло 1 — небо</span></div>
+          <div class="mp__layer" style="--i:1"><canvas width="800" height="500"></canvas><span class="mp__label">стекло 2 — лес</span></div>
+          <div class="mp__layer" style="--i:2"><canvas width="800" height="500"></canvas><span class="mp__label">стекло 3 — Ёжик</span></div>
+          <div class="mp__layer mp__layer--kalka" style="--i:3"><canvas width="800" height="500"></canvas><span class="mp__label">калька — туман</span></div>
+          <div class="mp__layer" style="--i:4"><canvas width="800" height="500"></canvas><span class="mp__label">стекло 4 — трава</span></div>
+        </div>
+      </div>
+      <div class="mp__controls">
+        <label class="slider">
+          <span>Разобрать сцену на&nbsp;слои</span>
+          <input type="range" id="mp-split" min="0" max="1" step="0.001" value="0">
+        </label>
+        <label class="slider">
+          <span>Поднять кальку</span>
+          <input type="range" id="mp-kalka" min="0" max="1" step="0.001" value="0.25">
+        </label>
+      </div>
+    </div>
+
+    <p class="block__note">Программисты делают то&nbsp;же самое. Эта сцена — пять отдельных холстов
+      <code>&lt;canvas&gt;</code>, сложенных стопкой. Браузер смешивает их в&nbsp;одну картинку, как
+      камера Норштейна смешивала стёкла. Слои есть в&nbsp;каждой игре, в&nbsp;каждом фоторедакторе
+      и&nbsp;в&nbsp;каждом приложении на&nbsp;твоём телефоне.</p>
+  </section>
+
+  <!-- ============ Песочница ============ -->
+  <section class="block" id="code" data-scene="calm">
+    <div class="block__head">
+      <p class="kicker">Теперь ты режиссёр</p>
+      <h2>Туман — это код</h2>
+      <p>Справа — код этой сцены. Хватай мышкой любое оранжевое число и&nbsp;тяни
+        влево или вправо. Ничего не&nbsp;сломается. А&nbsp;если сломается — есть кнопка «как было».</p>
+    </div>
+
+    <div class="play">
+      <div class="play__view">
+        <canvas id="play-canvas" role="img" aria-label="Ёжик в тумане, нарисованный по параметрам из кода"></canvas>
+        <p class="play__fps"><span id="fps">60</span> кадров в&nbsp;секунду · иголок в&nbsp;кадре: <span id="needle-count">72</span></p>
+      </div>
+      <div class="play__code">
+<pre class="code"><code><span class="c">// перетаскивай оранжевые числа ← →</span>
+
+<span class="k">const</span> scene = {
+  stars:     <span class="num" tabindex="0" data-key="stars" data-min="0" data-max="2000" data-step="5">140</span>,  <span class="c">// звёзды на небе</span>
+  fog:       <span class="num" tabindex="0" data-key="fog" data-min="0" data-max="1.6" data-step="0.01" data-dec="2">0.55</span>,  <span class="c">// густота тумана</span>
+  wind:      <span class="num" tabindex="0" data-key="wind" data-min="-8" data-max="8" data-step="0.05" data-dec="1">1.0</span>,  <span class="c">// ветер: минус — влево</span>
+  needles:   <span class="num" tabindex="0" data-key="needles" data-min="0" data-max="900" data-step="1">72</span>,  <span class="c">// сколько иголок у ёжика</span>
+  needleLen: <span class="num" tabindex="0" data-key="needleLen" data-min="0" data-max="140" data-step="0.5">34</span>,  <span class="c">// их длина</span>
+  fireflies: <span class="num" tabindex="0" data-key="fireflies" data-min="0" data-max="600" data-step="1">14</span>,  <span class="c">// светлячки</span>
+  skyHue:    <span class="num" tabindex="0" data-key="skyHue" data-min="0" data-max="360" data-step="1">218</span>,  <span class="c">// цвет неба, 0…360</span>
+};
+
+<span class="c">// одна строчка — и все иголки на месте:</span>
+<span class="k">for</span> (<span class="k">let</span> i = <span class="n">0</span>; i &lt; scene.needles; i++) {
+  <span class="f">drawNeedle</span>(i);
+}</code></pre>
+        <div class="play__buttons">
+          <button type="button" class="btn" id="play-reset">Как было</button>
+          <button type="button" class="btn btn--ghost" data-preset="bald">Лысый ёжик</button>
+          <button type="button" class="btn btn--ghost" data-preset="storm">Буря</button>
+          <button type="button" class="btn btn--ghost" data-preset="dawn">Рассвет</button>
+        </div>
+      </div>
+    </div>
+
+    <p class="block__note">Заметил строчку с&nbsp;<code>for</code>? Ты сказал компьютеру «нарисуй иголку»
+      один раз и&nbsp;добавил «повтори семьдесят два раза». Можно девятьсот — он не&nbsp;устанет
+      и&nbsp;не&nbsp;собьётся со&nbsp;счёта. В&nbsp;этом весь смысл программирования: объяснить один раз,
+      чтобы машина повторяла сколько угодно.</p>
+
+    <details class="source">
+      <summary>Показать настоящий код тумана — тот, что работает на этой странице</summary>
+      <p>Это не пример из учебника. Это функция, которая прямо сейчас рисует туман у&nbsp;тебя на&nbsp;экране.
+        Браузер умеет показать собственный код — мы просто попросили.</p>
+      <pre class="code code--small"><code id="fog-source"></code></pre>
+    </details>
+  </section>
+
+  <!-- ============ Звёзды ============ -->
+  <section class="block" id="stars" data-scene="calm">
+    <div class="block__head">
+      <p class="kicker">Как в мультфильме</p>
+      <h2>Посчитай звёзды</h2>
+      <p>Ёжик и&nbsp;Медвежонок делали это каждый вечер. Нажимай на&nbsp;звёзды — и&nbsp;соединяй их
+        в&nbsp;своё созвездие. Слева от&nbsp;трубы — звёзды Ёжика, справа — Медвежонка.</p>
+    </div>
+
+    <div class="count">
+      <canvas id="count-canvas" role="img" aria-label="Ночное небо над крышей: нажимай на звёзды, чтобы их сосчитать"></canvas>
+      <div class="count__score" aria-live="polite">
+        <span>Ёжика: <b id="score-hog">0</b></span>
+        <span>Медвежонка: <b id="score-bear">0</b></span>
+        <button type="button" class="btn btn--ghost btn--small" id="count-clear">Новое небо</button>
+      </div>
+    </div>
+
+    <div class="reveal" id="reveal" hidden>
+      <p>Ты только что сделал то, что делает программа. Вот всё, что происходит, когда ты нажимаешь на&nbsp;небо:</p>
+<pre class="code"><code>sky.<span class="f">addEventListener</span>(<span class="s">'click'</span>, (click) =&gt; {
+  <span class="k">const</span> star = <span class="f">nearest</span>(stars, click);  <span class="c">// найти ближайшую звезду</span>
+  star.lit = <span class="k">true</span>;                     <span class="c">// зажечь её</span>
+  <span class="f">line</span>(previous, star);                <span class="c">// протянуть линию</span>
+  previous = star;
+});</code></pre>
+      <p>Четыре строчки. Ты уже понимаешь, что в&nbsp;них написано, — значит, уже умеешь читать код.</p>
+    </div>
+  </section>
+
+  <!-- ============ Финал ============ -->
+  <section class="block finale" id="start" data-scene="end">
+    <div class="block__head">
+      <p class="kicker">И что теперь</p>
+      <h2>Ты уже начал</h2>
+    </div>
+
+    <dl class="stats">
+      <div><dt>картинок</dt><dd>0</dd></div>
+      <div><dt>строк кода</dt><dd id="loc">≈1500</dd></div>
+      <div><dt>ёжик</dt><dd>1</dd></div>
+    </dl>
+
+    <div class="console-guide">
+      <p>Нажми <kbd>F12</kbd> (на&nbsp;Mac — <kbd>⌥</kbd><kbd>⌘</kbd><kbd>J</kbd>), открой вкладку
+        <b>Console</b> и&nbsp;напиши любую из&nbsp;этих команд. Потом нажми <kbd>Enter</kbd> и&nbsp;посмотри на&nbsp;туман.</p>
+      <ul class="cmds">
+        <li><code>туман(0)</code><span>разогнать туман</span></li>
+        <li><code>туман(1.5)</code><span>молоко</span></li>
+        <li><code>звёзды(1500)</code><span>много звёзд</span></li>
+        <li><code>лошадь()</code><span>позвать Лошадь</span></li>
+        <li><code>филин()</code><span>разбудить Филина</span></li>
+        <li><code>светлячки(200)</code><span>светлячки</span></li>
+        <li><code>ёжик.иголки(500)</code><span>очень колючий ёжик</span></li>
+        <li><code>небо(300)</code><span>перекрасить небо</span></li>
+      </ul>
+      <p class="muted">С телефона консоль не открыть — попробуй потом с компьютера. Это стоит того.</p>
+    </div>
+
+    <p class="finale__text">Только что ты управлял сайтом изнутри. Так начинали почти все программисты:
+      открывали чужой код, меняли одно число и&nbsp;смотрели, что будет. Ни&nbsp;стекла, ни&nbsp;кальки,
+      ни&nbsp;киностудии — только браузер и&nbsp;любопытство.</p>
+
+    <ul class="next">
+      <li>
+        <a href="https://github.com/bloody-kumorizora/site-multfilm" target="_blank" rel="noopener">Код этого сайта</a>
+        <span>Скачай, открой файл <code>js/art.js</code> и&nbsp;перерисуй Ёжика по-своему.</span>
+      </li>
+      <li>
+        <a href="https://editor.p5js.org" target="_blank" rel="noopener">Редактор p5.js</a>
+        <span>Рисуй кодом прямо в&nbsp;браузере — ничего не&nbsp;нужно устанавливать.</span>
+      </li>
+      <li>
+        <a href="https://learn.javascript.ru" target="_blank" rel="noopener">Учебник JavaScript</a>
+        <span>Тот самый язык, на&nbsp;котором написан этот туман. По-русски и&nbsp;с&nbsp;самого начала.</span>
+      </li>
+    </ul>
+
+    <p class="finale__last">А как там Лошадь — в&nbsp;тумане?<br><em>Это уже тебе решать.</em></p>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <p>«Ёжик в&nbsp;тумане», Союзмультфильм, 1975. Режиссёр Юрий Норштейн, сценарий Сергея Козлова,
+    художник Франческа Ярбусова, оператор Александр Жуковский, композитор Михаил Меерович,
+    текст читает Алексей Баталов.</p>
+  <p>Это фан-сайт, сделанный из&nbsp;любви. Все права на&nbsp;мультфильм принадлежат его авторам.
+    Вся графика сайта нарисована кодом с&nbsp;нуля.</p>
+</footer>
+
+<script src="js/art.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
