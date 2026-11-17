@@ -24,6 +24,11 @@ const Art = (() => {
   }
 
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  // «Случайное» число для любого целого n — всегда одно и то же.
+  const hash = (n) => {
+    const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+    return x - Math.floor(x);
+  };
   const lerp = (a, b, t) => a + (b - a) * t;
   const smooth = (a, b, v) => {
     const t = clamp((v - a) / (b - a), 0, 1);
@@ -163,7 +168,16 @@ const Art = (() => {
       this.puffs = [];
       this.trail = [];
       this.w = 1; this.h = 1;
+      this.offset = 0;     // насколько туман сдвинут, пока Ёжик идёт
       this.setCount(count);
+    }
+
+    // Где пятно на экране. Туман бесконечный: что уплыло влево, появляется справа.
+    _x(p) {
+      const span = this.w * 1.7;
+      let x = (p.hx * this.w - this.offset) % span;
+      if (x < 0) x += span;
+      return x - this.w * 0.35 + p.dx;
     }
 
     setCount(n) {
@@ -201,7 +215,7 @@ const Art = (() => {
         p.hx += wind * p.speed * 0.011 * dt;
         if (p.hx > 1.35) p.hx -= 1.7;
         if (p.hx < -0.35) p.hx += 1.7;
-        const x = p.hx * w + p.dx;
+        const x = this._x(p);
         const y = p.hy * h + p.dy;
         if (ptr && ptr.active) {
           const ex = x - ptr.x;
@@ -239,7 +253,7 @@ const Art = (() => {
         if (a < 0.004) continue;
         const ph = h * (0.15 + 0.22 * p.s);
         const pw = ph * (2.3 + p.s * 1.2);
-        const x = p.hx * w + p.dx;
+        const x = this._x(p);
         const y = p.hy * h + p.dy + Math.sin(t * 0.4 + p.ph) * ph * 0.06;
         ctx.globalAlpha = Math.min(1, a);
         ctx.drawImage(PUFF, x - pw / 2, y - ph / 2, pw, ph);
@@ -331,10 +345,14 @@ const Art = (() => {
     const blink = o.blink ?? 1;            // 1 — глаз открыт, 0 — закрыт
     const rand = rng(o.seed ?? 7);
     const breath = 1 + Math.sin(t * 1.7) * 0.014;
+    const move = clamp(o.move ?? 0, 0, 1);   // 0 — стоит, 1 — идёт
+    const ph = o.walk ?? 0;                  // фаза шага
+    const boil = o.boil ?? 0;                // «дрожание» линий, как в рисованном кино
+    const bob = -Math.abs(Math.sin(ph)) * 4 * move;
 
     ctx.save();
-    ctx.translate(x, y);
-    ctx.scale(o.flip ? -s : s, s);
+    ctx.translate(x, y + bob * s);
+    ctx.scale((o.turn ?? (o.flip ? -1 : 1)) * s, s);
     ctx.globalAlpha *= o.alpha ?? 1;
 
     const C = (c) => sil || c;
@@ -344,9 +362,17 @@ const Art = (() => {
       ctx.fillStyle = 'rgba(0,0,0,.28)';
       ellipse(ctx, 0, 50, 74, 7);
     }
-    ctx.fillStyle = C('#3a2f28');
-    ellipse(ctx, -30, 42, 10, 8);
-    ellipse(ctx, 20, 44, 10, 7);
+    // лапки: дальние темнее и шагают в противофазе
+    const leg = (lx, ly, phase, color) => {
+      const dx = Math.sin(phase) * 9 * move;
+      const lift = Math.max(0, Math.cos(phase)) * 5 * move;
+      ctx.fillStyle = C(color);
+      ellipse(ctx, lx + dx, ly - lift - bob, 10, 8);
+    };
+    leg(-22, 40, ph + Math.PI, '#241d18');
+    leg(28, 42, ph, '#241d18');
+    leg(-32, 42, ph, '#3a2f28');
+    leg(18, 44, ph + Math.PI, '#3a2f28');
 
     // тело
     ctx.fillStyle = C('#6b5b4e');
@@ -360,7 +386,7 @@ const Art = (() => {
       { k: 0.66, len: 0.66, w: 1.6, c: '#8d7c6c' },
     ];
     ctx.lineCap = 'round';
-    for (const row of rows) {
+    rows.forEach((row, ri) => {
       ctx.strokeStyle = C(row.c);
       ctx.lineWidth = row.w * (needles > 400 ? 0.6 : 1);
       ctx.beginPath();
@@ -369,10 +395,11 @@ const Art = (() => {
         const a = Math.PI * 0.9 + u * Math.PI * 0.98;
         const bx = -8 + Math.cos(a) * 56 * row.k * breath;
         const by = 6 + Math.sin(a) * 38 * row.k * breath;
-        const dir = a - 0.42 + (rand() - 0.5) * 0.35;
+        const bj = boil ? hash(i * 7.3 + ri * 131 + boil * 977) - 0.5 : 0;
+        const dir = a - 0.42 + (rand() - 0.5) * 0.35 + bj * 0.09;
         const taper = u > 0.82 ? 1 - (u - 0.82) * 3.2 : 1;
-        const len = L * row.len * (0.72 + rand() * 0.5) * taper;
-        const sway = Math.sin(t * 2 + i * 0.3) * 0.03;
+        const len = L * row.len * (0.72 + rand() * 0.5) * taper * (1 + bj * 0.07);
+        const sway = Math.sin(t * 2 + i * 0.3) * 0.03 + Math.sin(ph * 2 + i) * 0.05 * move;
         const tx = bx + Math.cos(dir + sway) * len;
         const ty = by + Math.sin(dir + sway) * len;
         const cx = bx + Math.cos(dir) * len * 0.5 - Math.sin(dir) * 3;
@@ -381,7 +408,7 @@ const Art = (() => {
         ctx.quadraticCurveTo(cx, cy, tx, ty);
       }
       ctx.stroke();
-    }
+    });
 
     // мордочка
     ctx.fillStyle = C('#b8a48e');
@@ -528,6 +555,13 @@ const Art = (() => {
   function blurCopy(src, r) {
     const c = makeCanvas(src.width, src.height);
     const g = c.getContext('2d');
+    // если браузер умеет настоящее размытие — берём его
+    g.filter = `blur(${r}px)`;
+    if (g.filter === `blur(${r}px)`) {
+      g.drawImage(src, 0, 0);
+      g.filter = 'none';
+      return c;
+    }
     const rings = [[r * 0.45, 8], [r, 14]];
     g.globalAlpha = 0.11;
     for (const [rad, n] of rings) {
@@ -696,8 +730,147 @@ const Art = (() => {
     branch(g, w * 0.86, h, h * 0.2, -Math.PI / 2 - 0.05, 8, rand);
   }
 
+
+  /* ---------- лес и дорога для прогулки ---------- */
+
+  // Ёлка из треугольников. Чем дальше ёлка, тем она светлее — так работает туман.
+  function drawFir(ctx, x, baseY, h, color) {
+    ctx.fillStyle = color;
+    ctx.fillRect(x - h * 0.02, baseY - h * 0.2, h * 0.04, h * 0.2);
+    for (let k = 0; k < 7; k++) {
+      const yy = baseY - h * 0.12 - (h * 0.85) * (k / 7);
+      const ww = h * 0.26 * (1 - k / 8);
+      ctx.beginPath();
+      ctx.moveTo(x - ww, yy);
+      ctx.lineTo(x, yy - h * 0.22);
+      ctx.lineTo(x + ww, yy);
+      ctx.fill();
+    }
+  }
+
+  // Высокий «зонтик» — сныть или борщевик. Такие стоят в тумане в мультфильме.
+  function drawUmbrella(ctx, x, baseY, h, color, lw = 1.4, sway = 0) {
+    const tx = x + sway * h * 0.08, ty = baseY - h;
+    ctx.strokeStyle = color;
+    ctx.lineCap = 'round';
+    ctx.lineWidth = lw;
+    ctx.beginPath();
+    ctx.moveTo(x, baseY);
+    ctx.quadraticCurveTo(x + h * 0.03, baseY - h * 0.5, tx, ty);
+    for (let k = 0; k < 11; k++) {
+      const a = -Math.PI / 2 + (k - 5) * 0.26;
+      ctx.moveTo(tx, ty);
+      ctx.lineTo(tx + Math.cos(a) * h * 0.16, ty + Math.sin(a) * h * 0.07 + h * 0.05);
+    }
+    ctx.stroke();
+    ctx.fillStyle = color;
+    for (let k = 0; k < 11; k++) {
+      const a = -Math.PI / 2 + (k - 5) * 0.26;
+      ellipse(ctx, tx + Math.cos(a) * h * 0.16, ty + Math.sin(a) * h * 0.07 + h * 0.05, lw * 1.6, lw * 1.6);
+    }
+  }
+
+  // Огромный ствол дерева. Проплывает перед камерой, ближе всего к зрителю.
+  function drawTrunk(ctx, x, w, h, color, seed = 3) {
+    const r = rng(seed);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(x - w * 0.5, h);
+    for (let y = h; y >= -20; y -= 30) {
+      ctx.lineTo(x - w * 0.5 + (r() - 0.5) * w * 0.06 - Math.max(0, (y - h * 0.8)) * 0.4, y);
+    }
+    ctx.lineTo(x + w * 0.5, -20);
+    for (let y = -20; y <= h; y += 30) {
+      ctx.lineTo(x + w * 0.5 + (r() - 0.5) * w * 0.06 + Math.max(0, (y - h * 0.8)) * 0.4, y);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Большой лохматый пёс: силуэт из сотни коротких штрихов-шерстинок.
+  function drawDog(ctx, x, y, s, color, t = 0, hasBundle = false) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(-s, s);           // смотрит влево, на Ёжика
+    ctx.fillStyle = color;
+    ctx.strokeStyle = color;
+    ellipse(ctx, 0, -60, 80, 48);            // туловище
+    ellipse(ctx, 78, -110, 38, 34);          // голова
+    ellipse(ctx, 108, -98, 26, 16);          // морда
+    ellipse(ctx, 60, -104, 13, 30, 0.35);    // ухо висит
+    ctx.lineCap = 'round';
+    ctx.lineWidth = 16;
+    for (const [lx, d] of [[-55, 0], [-30, 1], [40, 0], [62, 1]]) {
+      ctx.beginPath();
+      ctx.moveTo(lx, -40);
+      ctx.lineTo(lx + Math.sin(t * 2 + d) * 2, 0);
+      ctx.stroke();
+    }
+    // шерсть свисает вниз лохмами
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    const fur = rng(17);
+    for (let i = 0; i < 140; i++) {
+      const a = fur() * TAU;
+      const head = i >= 100;
+      const cx = head ? 78 + Math.cos(a) * 36 : Math.cos(a) * 78;
+      const cy = head ? -110 + Math.sin(a) * 32 : -60 + Math.sin(a) * 46;
+      if (Math.sin(a) < -0.6 && !head) continue;
+      const len = (head ? 7 : 10) + fur() * 12;
+      const out = 0.35;
+      const dx = Math.cos(a) * out, dy = 1 - out + Math.max(0, Math.sin(a)) * out;
+      ctx.moveTo(cx, cy);
+      ctx.quadraticCurveTo(cx + dx * len * 0.6 + 2, cy + dy * len * 0.5, cx + dx * len, cy + dy * len);
+    }
+    ctx.stroke();
+    // хвост виляет
+    ctx.lineWidth = 12;
+    ctx.beginPath();
+    ctx.moveTo(-76, -78);
+    ctx.quadraticCurveTo(-110, -100 + Math.sin(t * 9) * 14, -118, -130 + Math.sin(t * 9) * 20);
+    ctx.stroke();
+    if (hasBundle) {
+      ctx.strokeStyle = '#b9b2a4';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(126, -96); ctx.lineTo(130, -84); ctx.stroke();
+      ctx.fillStyle = '#d8d2c6';
+      ellipse(ctx, 131, -74, 13, 11);
+      ctx.fillStyle = '#b04060';
+      ellipse(ctx, 127, -74, 1.8, 1.8);
+      ellipse(ctx, 135, -71, 1.8, 1.8);
+    }
+    // глаз блестит
+    ctx.fillStyle = 'rgba(255,230,190,.7)';
+    ellipse(ctx, 92, -116, 2.5, 2.5);
+    ctx.restore();
+  }
+
+  // Кто-то большой под водой. Видна только тень и один блик.
+  function drawDeepOne(ctx, x, y, s, alpha, t = 0) {
+    if (alpha <= 0.01) return;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(x, y);
+    ctx.scale(s, s);
+    const g = ctx.createRadialGradient(0, 0, 10, 0, 0, 170);
+    g.addColorStop(0, 'rgba(2,6,14,.85)');
+    g.addColorStop(1, 'rgba(2,6,14,0)');
+    ctx.fillStyle = g;
+    ellipse(ctx, 0, 0, 190, 46);
+    ctx.fillStyle = 'rgba(2,6,14,.6)';
+    ctx.beginPath();          // хвост
+    ctx.moveTo(150, 0);
+    ctx.lineTo(220, -30 + Math.sin(t * 2) * 10);
+    ctx.lineTo(214, 30 + Math.sin(t * 2) * 10);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(220,230,240,.5)';
+    ellipse(ctx, -120, -8, 3, 2.5);
+    ctx.restore();
+  }
+
   return {
-    TAU, rng, clamp, lerp, smooth, makeCanvas, ellipse,
+    TAU, rng, hash, clamp, lerp, smooth, makeCanvas, ellipse,
+    drawFir, drawUmbrella, drawTrunk, drawDog, drawDeepOne,
     PUFF, GLOW, drawSky, drawMoon, Stars, FogField, Fireflies,
     drawHedgehog, drawBear, drawHorse, drawOwl, makeGround, drawForest, branch,
   };

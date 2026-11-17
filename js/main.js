@@ -7,188 +7,245 @@
 'use strict';
 
 (() => {
-  const { clamp, lerp, rng } = Art;
+  const { clamp, lerp, rng, smooth: S, hash } = Art;
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+  // «колокол»: 0 до a, плавно 1 от b до c, плавно 0 после d
+  const bell = (a, b, c, d, u) => S(a, b, u) * (1 - S(c, d, u));
 
   /* ================================================================
-   * 1. Большая сцена на фоне всей страницы
-   * ================================================================ */
-
-  // Каждая глава истории — это набор чисел. Пока ты листаешь,
-  // сцена плавно перетекает от одного набора к другому.
-  const PRESETS = {
-    hero:     { fog: 0.62, back: 0.35, spread: 0.6, stars: 1, lines: 0, horse: 0, owl: 0, river: 0, warm: 0, hog: 1, kalka: 0, flies: 0.7, moon: 1, ground: 1 },
-    evening:  { fog: 0.22, back: 0.15, spread: 0.4, lines: 1, flies: 0.4 },
-    fog:      { fog: 0.95, back: 0.6, spread: 0.8, kalka: 0.25, stars: 0.75, flies: 0.3 },
-    horse:    { fog: 0.85, back: 0.55, spread: 0.85, horse: 0.85, kalka: 0.35, stars: 0.6, flies: 0.2 },
-    owl:      { fog: 1.15, back: 0.8, spread: 1, owl: 1, kalka: 0.6, stars: 0.3, moon: 0.4, flies: 0.15 },
-    river:    { fog: 0.7, back: 0.45, spread: 0.65, river: 1, kalka: 0.15, stars: 0.6, flies: 0 },
-    together: { fog: 0.3, back: 0.2, spread: 0.45, warm: 1, lines: 0.5, flies: 1 },
-    calm:     { fog: 0.3, back: 0.2, spread: 0.45, hog: 0, flies: 0.35, stars: 0.85, ground: 0.35 },
-    end:      { fog: 0.45, back: 0.25, spread: 0.55, hog: 0, horse: 0.5, flies: 0.6, ground: 0.6 },
-  };
-  const BASE = PRESETS.hero;
-  const preset = (name) => ({ ...BASE, ...(PRESETS[name] || {}) });
-
-  const scene = {
-    now: preset('hero'),       // что на экране сейчас
-    target: preset('hero'),    // куда сцена плывёт
-    override: {},              // то, что ты задал из консоли
-    hue: 218,
-    needles: 72,
-    blinkAt: 2,
-  };
+   * 1. Прогулка. Ты листаешь — Ёжик идёт.
+   * ================================================================
+   *
+   * Весь лес — одна длинная дорога. Её длина LW пикселей.
+   * Чем дальше ты прокрутил страницу, тем дальше по дороге Ёжик.
+   * u — где он сейчас: 0 — начало, 1 — костёр Медвежонка.
+   *
+   * Каждый слой леса едет со своей скоростью f (параллакс):
+   * далёкие холмы — медленно, ближняя трава — быстро.
+   * Так же работал многоярусный станок Норштейна.
+   */
 
   const sky = $('#sky');
   const ctx = sky.getContext('2d');
-  let W = 0, H = 0, DPR = 1;
-  let ground = null;
+  const film = $('#film');
+  let W = 0, H = 0, DPR = 1, LW = 1;
+
+  const walk = {
+    x: 0,          // где Ёжик на дороге, в пикселях
+    phase: 0,      // фаза шага
+    move: 0,       // 0 — стоит, 1 — идёт
+    face: 1,       // куда смотрит: 1 — вперёд, -1 — назад
+    turn: 1,       // плавный поворот
+    blinkAt: 2,
+  };
+
+  const opt = {          // то, что можно менять из консоли
+    hue: 218,
+    needles: 72,
+    fog: null,           // null — туман решает сам
+    horse: 0,
+    owl: 0,
+    warm: 0,
+  };
+  const now = { horse: 0, owl: 0, warm: 0 };
 
   const stars = new Art.Stars(260, 11);
-  const fogBack = new Art.FogField(16, 31, 0.35);
+  const fogBack = new Art.FogField(18, 31, 0.35);
   const fogFront = new Art.FogField(26, 3, 0.5);
   const flies = new Art.Fireflies(26, 5);
 
-  // Два созвездия: звёзды Ёжика и звёзды Медвежонка.
   const CONSTELLATIONS = [
     [[0.1, 0.14], [0.15, 0.1], [0.21, 0.12], [0.26, 0.16], [0.27, 0.25], [0.34, 0.24], [0.33, 0.15]],
     [[0.6, 0.08], [0.64, 0.16], [0.7, 0.13], [0.74, 0.22], [0.69, 0.3]],
   ];
 
-  const ptr = { x: -9999, y: -9999, vx: 0, vy: 0, active: false, t: 0, moved: 0 };
+  const ptr = { x: -9999, y: -9999, vx: 0, vy: 0, active: false, t: 0 };
+
+  let filmTop = 0, filmLen = 1;
+  function measure() {
+    filmTop = film.offsetTop;
+    filmLen = Math.max(1, film.offsetHeight - window.innerHeight);
+  }
 
   function resize() {
     DPR = Math.min(window.devicePixelRatio || 1, 1.6);
+    const ratio = W ? walk.x / LW : 0;
     W = window.innerWidth;
     H = window.innerHeight;
+    LW = Math.max(W, 900) * 9;
+    walk.x = ratio * LW;
     sky.width = Math.round(W * DPR);
     sky.height = Math.round(H * DPR);
     fogBack.resize(W, H);
     fogFront.resize(W, H);
-    ground = Art.makeGround(W, H, 21);
+    measure();
   }
-
   let lastResize = 0;
   window.addEventListener('resize', () => {
     // на телефоне адресная строка меняет высоту при прокрутке — не дёргаемся
-    const now = performance.now();
-    if (Math.abs(window.innerWidth - W) < 2 && Math.abs(window.innerHeight - H) < 120 && now - lastResize < 4000) return;
-    lastResize = now;
+    const t = performance.now();
+    if (Math.abs(window.innerWidth - W) < 2 && Math.abs(window.innerHeight - H) < 120 && t - lastResize < 4000) return;
+    lastResize = t;
     resize();
   });
 
   // --- рука в тумане ---
-  let hintDone = false;
   function onMove(e) {
-    const now = performance.now();
-    const dt = Math.max(8, now - (ptr.t || now - 16)) / 1000;
+    const t = performance.now();
+    const dt = Math.max(8, t - (ptr.t || t - 16)) / 1000;
     if (ptr.active) {
       ptr.vx = lerp(ptr.vx, (e.clientX - ptr.x) / dt, 0.5);
       ptr.vy = lerp(ptr.vy, (e.clientY - ptr.y) / dt, 0.5);
-      ptr.moved += Math.hypot(e.clientX - ptr.x, e.clientY - ptr.y);
     }
-    ptr.x = e.clientX; ptr.y = e.clientY; ptr.t = now; ptr.active = true;
+    ptr.x = e.clientX; ptr.y = e.clientY; ptr.t = t; ptr.active = true;
     fogFront.touch(ptr.x, ptr.y, 1);
     fogBack.touch(ptr.x, ptr.y, 0.6);
-    if (!hintDone && ptr.moved > 700) {
-      hintDone = true;
-      $('#hint')?.classList.add('is-done');
-    }
   }
   window.addEventListener('pointermove', onMove, { passive: true });
   window.addEventListener('pointerdown', onMove, { passive: true });
   document.addEventListener('pointerleave', () => { ptr.active = false; });
   window.addEventListener('blur', () => { ptr.active = false; });
 
-  function hogPlacement() {
-    const narrow = W < 700;
-    const s = clamp(Math.min(W, H) / (narrow ? 820 : 780), 0.42, 1.15);
-    const x = narrow ? W * 0.3 : W * 0.24;
-    const y = ground.yAt(x) - 50 * s;
-    return { x, y, s };
+  /* ---------- дорога ---------- */
+
+  const hogScreenX = () => W * (W < 700 ? 0.3 : 0.36);
+  const hogScale = () => clamp(Math.min(W, H) / (W < 700 ? 820 : 760), 0.42, 1.2);
+  const RIVER = [0.635, 0.795];
+  const riverAt = (u) => S(RIVER[0], RIVER[0] + 0.015, u) * (1 - S(RIVER[1] - 0.015, RIVER[1], u));
+  const waterY = () => H * 0.84;
+
+  function groundY(wx) {
+    const u = wx / LW;
+    const base = H * 0.8 + Math.sin(wx * 0.0021) * H * 0.012 + Math.sin(wx * 0.0057 + 1) * H * 0.006;
+    const ravine = bell(0.16, 0.27, 0.57, 0.64, u) * H * 0.06;   // спуск в овраг
+    const bed = riverAt(u) * H * 0.1;                              // русло реки
+    return base + ravine + bed;
   }
 
-  function drawRiver(a, t) {
-    if (a <= 0.01) return;
-    const top = H * 0.8;
-    ctx.save();
-    ctx.globalAlpha = a;
-    const g = ctx.createLinearGradient(0, top, 0, H);
-    g.addColorStop(0, 'rgba(18,30,52,0)');
-    g.addColorStop(0.18, 'rgba(18,30,52,.92)');
-    g.addColorStop(1, 'rgba(8,14,28,1)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, top, W, H - top);
-    // лунная дорожка и рябь
-    const mx = W * 0.78;
-    for (let i = 0; i < 46; i++) {
-      const k = i / 46;
-      const y = top + H * 0.03 + k * (H - top);
-      const spread = 20 + k * 120;
-      const x = mx + Math.sin(t * 0.8 + i * 1.7) * spread * 0.4;
-      const len = (14 + Math.sin(t * 1.3 + i) * 10) * (0.6 + k);
-      ctx.globalAlpha = a * (0.55 - k * 0.35) * (0.6 + 0.4 * Math.sin(t * 2 + i));
-      ctx.fillStyle = '#e8e2c9';
-      ctx.fillRect(x - len / 2, y, len, 1.4);
+  // Где на экране окажется вещь, которая стоит на дороге в точке um.
+  // Когда Ёжик дойдёт до um, вещь будет ровно рядом с ним (+ offset).
+  const placeX = (um, f, offset = 0) => hogScreenX() + (um * LW - walk.x) * f + offset;
+
+  /* ---------- слои леса ---------- */
+
+  function drawHills(camX, hue) {
+    const f = 0.12;
+    ctx.fillStyle = `hsl(${hue - 6} 20% 15%)`;
+    ctx.beginPath();
+    ctx.moveTo(0, H);
+    for (let x = 0; x <= W + 10; x += 10) {
+      const q = camX * f + x;
+      const y = H * 0.6 - (Math.sin(q * 0.003) * 0.5 + 0.5) * H * 0.07 - Math.sin(q * 0.0011 + 2) * H * 0.05;
+      ctx.lineTo(x, y);
     }
-    ctx.strokeStyle = 'rgba(160,190,230,.18)';
-    ctx.lineWidth = 1;
-    for (let i = 0; i < 9; i++) {
-      const y = top + H * 0.05 + i * (H - top) / 10;
-      ctx.globalAlpha = a * 0.7;
-      ctx.beginPath();
-      for (let x = 0; x <= W; x += 24) {
-        const yy = y + Math.sin(x * 0.012 + t * 0.9 + i) * 2.5;
-        x === 0 ? ctx.moveTo(x, yy) : ctx.lineTo(x, yy);
-      }
-      ctx.stroke();
+    ctx.lineTo(W, H);
+    ctx.fill();
+  }
+
+  function drawForest(camX, hue) {
+    const f = 0.32, step = 46;
+    const q0 = camX * f;
+    ctx.save();
+    for (let k = Math.floor((q0 - 120) / step); k <= Math.ceil((q0 + W + 120) / step); k++) {
+      if (hash(k) < 0.3) continue;
+      const x = k * step + (hash(k + 0.5) - 0.5) * step - q0;
+      const h = H * (0.12 + hash(k + 0.9) * 0.2);
+      const shade = 9 + hash(k + 0.3) * 4;
+      Art.drawFir(ctx, x, H * 0.72 + hash(k + 0.7) * H * 0.03, h, `hsl(${hue - 2} 26% ${shade}%)`);
     }
     ctx.restore();
   }
 
-  function drawWarmth(a, t, hog) {
-    if (a <= 0.01) return;
-    const s = hog.s;
-    const fx = hog.x + 160 * s;
-    const fy = hog.y + 50 * s;
-    const flick = 0.88 + Math.sin(t * 9) * 0.06 + Math.sin(t * 13.7) * 0.05;
-    ctx.save();
-    const R = 360 * s * flick;
-    const g = ctx.createRadialGradient(fx, fy, 0, fx, fy, R);
-    g.addColorStop(0, `rgba(255,170,80,${0.4 * a})`);
-    g.addColorStop(0.4, `rgba(220,110,50,${0.14 * a})`);
-    g.addColorStop(1, 'rgba(200,90,40,0)');
-    ctx.fillStyle = g;
-    ctx.fillRect(fx - R, fy - R, R * 2, R * 2);
-    ctx.globalAlpha = a;
-    // поленья
-    ctx.strokeStyle = '#2a1a10';
-    ctx.lineCap = 'round';
-    ctx.lineWidth = 6 * s;
+  function drawGround(camX, u) {
+    const col = '#070a14';
+    ctx.fillStyle = col;
     ctx.beginPath();
-    ctx.moveTo(fx - 20 * s, fy + 2 * s); ctx.lineTo(fx + 18 * s, fy - 6 * s);
-    ctx.moveTo(fx - 18 * s, fy - 6 * s); ctx.lineTo(fx + 20 * s, fy + 2 * s);
+    ctx.moveTo(0, H);
+    for (let x = 0; x <= W + 6; x += 6) ctx.lineTo(x, groundY(camX + x));
+    ctx.lineTo(W, H);
+    ctx.fill();
+    // трава: у каждой травинки своё место на дороге, поэтому она едет вместе с землёй
+    ctx.strokeStyle = col;
+    ctx.lineCap = 'round';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    const step = 3;
+    for (let k = Math.floor(camX / step); k <= Math.ceil((camX + W) / step); k++) {
+      const wx = k * step;
+      if (riverAt(wx / LW) > 0.2) continue;
+      const x = wx - camX;
+      const y = groundY(wx) + 3;
+      const len = 5 + Math.pow(hash(k), 2.2) * 26;
+      const lean = (hash(k + 0.37) - 0.5) * 10 + Math.sin(T * 1.3 + k * 0.05) * 1.5;
+      ctx.moveTo(x, y);
+      ctx.quadraticCurveTo(x + lean * 0.3, y - len * 0.6, x + lean, y - len);
+    }
     ctx.stroke();
-    // язычки пламени: каждый колышется по-своему
-    const tongues = [[-8, 0.7, '#e0702e'], [7, 0.8, '#e0702e'], [0, 1, '#ffb350'], [-2, 0.62, '#ffe2a0']];
-    tongues.forEach(([dx, hgt, col], i) => {
-      const hh = 34 * s * hgt * (0.85 + 0.15 * Math.sin(t * (7 + i * 2.3) + i));
-      const sway = Math.sin(t * (5 + i) + i * 2) * 3 * s;
-      const bx = fx + dx * s;
-      ctx.fillStyle = col;
+    // зонтики на дороге
+    const us = 230;
+    for (let k = Math.floor((camX - 100) / us); k <= Math.ceil((camX + W + 100) / us); k++) {
+      if (hash(k * 3.1) < 0.55) continue;
+      const wx = k * us + hash(k * 7.7) * us;
+      if (riverAt(wx / LW) > 0.1) continue;
+      Art.drawUmbrella(ctx, wx - camX, groundY(wx) + 2, H * (0.09 + hash(k * 1.3) * 0.12), col, 1.6, Math.sin(T * 0.8 + k));
+    }
+  }
+
+  function drawForeground(camX) {
+    // самый ближний слой: тёмные стебли проплывают перед камерой быстрее всего
+    const f = 1.55, step = 420, q0 = camX * f;
+    for (let k = Math.floor((q0 - 300) / step); k <= Math.ceil((q0 + W + 300) / step); k++) {
+      if (hash(k * 2.3) < 0.45) continue;
+      const x = k * step + hash(k * 5.1) * step - q0;
+      Art.drawUmbrella(ctx, x, H + 10, H * (0.28 + hash(k * 9.2) * 0.2), '#03050b', 3.2, Math.sin(T * 0.6 + k) * 0.6);
+    }
+    // огромный ствол посреди тумана
+    const tx = placeX(0.43, 1.9, -W * 0.05);
+    if (tx > -W * 0.3 && tx < W * 1.3) Art.drawTrunk(ctx, tx, Math.max(160, W * 0.16), H, '#020308', 5);
+  }
+
+  function drawWater(camX, u, t) {
+    const r0 = RIVER[0] * LW - camX, r1 = RIVER[1] * LW - camX;
+    const x0 = Math.max(0, r0), x1 = Math.min(W, r1);
+    if (x1 <= x0) return;
+    const wy = waterY();
+    ctx.save();
+    const g = ctx.createLinearGradient(0, wy, 0, H);
+    g.addColorStop(0, 'rgba(22,36,60,.82)');
+    g.addColorStop(1, 'rgba(6,12,26,.96)');
+    ctx.fillStyle = g;
+    ctx.fillRect(x0, wy, x1 - x0, H - wy);
+    // лунная дорожка
+    const mx = W * 0.8;
+    for (let i = 0; i < 40; i++) {
+      const k = i / 40;
+      const y = wy + 4 + k * (H - wy);
+      const x = mx + Math.sin(t * 0.8 + i * 1.7) * (16 + k * 70);
+      if (x < x0 || x > x1) continue;
+      const len = (14 + Math.sin(t * 1.3 + i) * 10) * (0.6 + k);
+      ctx.globalAlpha = (0.55 - k * 0.35) * (0.6 + 0.4 * Math.sin(t * 2 + i));
+      ctx.fillStyle = '#e8e2c9';
+      ctx.fillRect(x - len / 2, y, len, 1.4);
+    }
+    // рябь
+    ctx.globalAlpha = 0.5;
+    ctx.strokeStyle = 'rgba(170,195,230,.35)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 7; i++) {
+      const y = wy + 2 + i * (H - wy) / 8;
       ctx.beginPath();
-      ctx.moveTo(bx - 7 * s * hgt, fy - 2 * s);
-      ctx.quadraticCurveTo(bx - 8 * s * hgt, fy - hh * 0.5, bx + sway, fy - hh);
-      ctx.quadraticCurveTo(bx + 8 * s * hgt, fy - hh * 0.5, bx + 7 * s * hgt, fy - 2 * s);
-      ctx.fill();
-    });
-    ctx.globalAlpha = a * 0.8;
-    ctx.drawImage(Art.GLOW, fx - 40 * s, fy - 60 * s, 80 * s, 80 * s);
-    // Медвежонок по ту сторону костра
-    ctx.globalAlpha = a;
-    Art.drawBear(ctx, hog.x + 300 * s, hog.y + 52 * s, s * 0.95, '#241a14', a);
+      for (let x = x0; x <= x1; x += 18) {
+        const yy = y + Math.sin((x + camX) * 0.014 + t * 1.2 + i) * 2;
+        x === x0 ? ctx.moveTo(x, yy) : ctx.lineTo(x, yy);
+      }
+      ctx.stroke();
+    }
+    // кромка воды
+    ctx.globalAlpha = 0.7;
+    ctx.fillStyle = 'rgba(200,215,235,.35)';
+    ctx.fillRect(x0, wy - 1, x1 - x0, 1.5);
     ctx.restore();
   }
 
@@ -214,101 +271,458 @@
     ctx.restore();
   }
 
+  function drawFire(a, t, hx, hy, s) {
+    if (a <= 0.01) return;
+    const fx = hx + 160 * s;
+    const fy = hy + 50 * s;
+    const flick = 0.88 + Math.sin(t * 9) * 0.06 + Math.sin(t * 13.7) * 0.05;
+    ctx.save();
+    const R = 380 * s * flick;
+    const g = ctx.createRadialGradient(fx, fy, 0, fx, fy, R);
+    g.addColorStop(0, `rgba(255,170,80,${0.42 * a})`);
+    g.addColorStop(0.4, `rgba(220,110,50,${0.15 * a})`);
+    g.addColorStop(1, 'rgba(200,90,40,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(fx - R, fy - R, R * 2, R * 2);
+    ctx.globalAlpha = a;
+    ctx.strokeStyle = '#2a1a10';
+    ctx.lineCap = 'round';
+    ctx.lineWidth = 6 * s;
+    ctx.beginPath();
+    ctx.moveTo(fx - 20 * s, fy + 2 * s); ctx.lineTo(fx + 18 * s, fy - 6 * s);
+    ctx.moveTo(fx - 18 * s, fy - 6 * s); ctx.lineTo(fx + 20 * s, fy + 2 * s);
+    ctx.stroke();
+    const tongues = [[-8, 0.7, '#e0702e'], [7, 0.8, '#e0702e'], [0, 1, '#ffb350'], [-2, 0.62, '#ffe2a0']];
+    tongues.forEach(([dx, hgt, col], i) => {
+      const hh = 34 * s * hgt * (0.85 + 0.15 * Math.sin(t * (7 + i * 2.3) + i));
+      const sway = Math.sin(t * (5 + i) + i * 2) * 3 * s;
+      const bx = fx + dx * s;
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.moveTo(bx - 7 * s * hgt, fy - 2 * s);
+      ctx.quadraticCurveTo(bx - 8 * s * hgt, fy - hh * 0.5, bx + sway, fy - hh);
+      ctx.quadraticCurveTo(bx + 8 * s * hgt, fy - hh * 0.5, bx + 7 * s * hgt, fy - 2 * s);
+      ctx.fill();
+    });
+    // искры улетают вверх
+    for (let i = 0; i < 6; i++) {
+      const life = (t * 0.6 + i / 6) % 1;
+      ctx.globalAlpha = a * (1 - life);
+      ctx.fillStyle = '#ffc070';
+      ctx.fillRect(fx + Math.sin(i * 7 + t * 2) * 14 * s, fy - 30 * s - life * 120 * s, 2, 2);
+    }
+    ctx.globalAlpha = a * 0.8;
+    ctx.drawImage(Art.GLOW, fx - 40 * s, fy - 60 * s, 80 * s, 80 * s);
+    ctx.globalAlpha = a;
+    Art.drawBear(ctx, hx + 300 * s, hy + 52 * s, s * 0.95, '#241a14', a);
+    ctx.restore();
+  }
+
+  // Название живёт внутри тумана — его можно «протереть» рукой.
+  let fontsReady = false;
+  if (document.fonts) document.fonts.ready.then(() => { fontsReady = true; });
+  function drawTitle(a) {
+    if (a <= 0.01) return;
+    const cx = W / 2 - walk.x * 0.45;
+    const size = Math.min(W * 0.17, H * 0.19);
+    const serif = fontsReady ? '"Cormorant Garamond", serif' : 'Georgia, serif';
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.shadowColor = 'rgba(5,8,18,.9)';
+    ctx.shadowBlur = 24;
+    ctx.fillStyle = '#f4efe3';
+    ctx.font = `500 ${size}px ${serif}`;
+    const y1 = H * 0.17 + size * 0.85;
+    ctx.fillText('Ёжик', cx, y1);
+    ctx.font = `italic 500 ${size * 0.78}px ${serif}`;
+    ctx.fillStyle = '#d7dde8';
+    ctx.fillText('в тумане', cx + size * 0.35, y1 + size * 0.82);
+    ctx.font = `400 ${Math.max(11, size * 0.085)}px ${fontsReady ? 'Lora, serif' : 'Georgia, serif'}`;
+    ctx.fillStyle = 'rgba(236,230,217,.7)';
+    ctx.fillText('ЮРИЙ НОРШТЕЙН  ·  СОЮЗМУЛЬТФИЛЬМ  ·  1975', cx, H * 0.17);
+    ctx.restore();
+  }
+
+  /* ---------- кадр ---------- */
+
   let last = performance.now();
   let T = 0;
-  function frame(now) {
-    const dt = Math.min(0.05, (now - last) / 1000);
-    last = now;
+  let progress = 0;      // 0…1 — сколько фильма прокручено
+  let bgHidden = false;  // фон закрыт другим блоком — можно не рисовать
+  const Z = {};          // «зоны»: насколько густой туман, видна ли река и т. д.
+
+  function frame(t) {
+    const dt = Math.min(0.05, (t - last) / 1000);
+    last = t;
     T += reduceMotion ? dt * 0.3 : dt;
-    const n = scene.now;
-    const goal = { ...scene.target, ...scene.override };
-    const k = 1 - Math.exp(-dt * 1.3);
-    for (const key in goal) n[key] = lerp(n[key] ?? 0, goal[key], k);
 
-    // пока руки нет, туман всё равно чуть-чуть шевелится
+    // Ёжик догоняет прокрутку — поэтому он идёт, а не прыгает
+    const target = progress * LW;
+    const prev = walk.x;
+    walk.x = lerp(walk.x, target, 1 - Math.exp(-dt * 4.5));
+    if (Math.abs(walk.x - target) < 0.3) walk.x = target;
+    const dx = walk.x - prev;
+    const s = hogScale();
+    const u = walk.x / LW;
+    const river = riverAt(u);
+    walk.phase += dx / (24 * s);
+    const speed = Math.abs(dx) / Math.max(dt, 1e-3);
+    walk.move = lerp(walk.move, river > 0.5 ? 0 : clamp(speed / (90 * s), 0, 1), 1 - Math.exp(-dt * 8));
+    if (dx < -0.4) walk.face = -1;
+    else if (dx > 0.4) walk.face = 1;
+    walk.turn = lerp(walk.turn, walk.face, 1 - Math.exp(-dt * 7));
+
+    // зоны прогулки
+    Z.fog = 0.38 + 0.7 * S(0.13, 0.24, u) - 0.3 * S(0.58, 0.66, u) - 0.5 * S(0.79, 0.88, u);
+    if (opt.fog !== null) Z.fog = opt.fog;
+    Z.spread = 0.55 + 0.45 * bell(0.14, 0.24, 0.6, 0.7, u);
+    Z.stars = 1 - 0.7 * bell(0.15, 0.25, 0.62, 0.8, u);
+    Z.lines = bell(0.04, 0.07, 0.13, 0.17, u) + 0.55 * S(0.88, 0.95, u);
+    Z.kalka = 0.45 * bell(0.22, 0.3, 0.55, 0.6, u);
+    Z.flies = 0.7 - 0.55 * bell(0.15, 0.22, 0.75, 0.82, u) + 0.4 * S(0.85, 0.92, u);
+    Z.river = river;
+    Z.owl = bell(0.4, 0.44, 0.52, 0.56, u);
+    Z.fire = S(0.8, 0.88, u);
+    Z.crickets = (1 - bell(0.15, 0.22, 0.8, 0.86, u));
+    now.horse = lerp(now.horse, opt.horse, 1 - Math.exp(-dt * 1.5));
+    now.owl = lerp(now.owl, opt.owl, 1 - Math.exp(-dt * 1.5));
+    now.warm = lerp(now.warm, opt.warm, 1 - Math.exp(-dt * 1.5));
+
     if (!ptr.active) { ptr.vx *= 0.9; ptr.vy *= 0.9; }
-    const wind = reduceMotion ? 0.2 : 1;
-    fogBack.update(dt, ptr, wind * 0.6);
-    fogFront.update(dt, ptr, wind);
+    fogBack.offset = walk.x * 0.55;
+    fogFront.offset = walk.x * 1.15;
+    fogBack.update(dt, ptr, 0.6);
+    fogFront.update(dt, ptr, 1);
     flies.update(dt, W, H, ptr);
+    Sound.update(Z, dt, progress);
 
-    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    Art.drawSky(ctx, W, H, scene.hue);
-    stars.draw(ctx, W, H, T, n.stars);
-    drawConstellations(n.lines);
-    const moonR = clamp(Math.min(W, H) * 0.042, 18, 46);
-    Art.drawMoon(ctx, W * 0.8, H * (W < 700 ? 0.075 : 0.17), moonR, n.moon);
-
-    const os = clamp(Math.min(W, H) / 700, 0.6, 1.3);
-    Art.drawOwl(ctx, W * 0.14, H * 0.3, os, n.owl, T);
-
-    ctx.drawImage(fogBack.render(n.back, n.spread, T), 0, 0, W, H);
-
-    const hs = clamp(H * 0.42, 220, 520);
-    Art.drawHorse(ctx, W * (W < 700 ? 0.72 : 0.7), ground.yAt(W * 0.7) - hs * 0.32, hs, n.horse, T);
-
-    ctx.globalAlpha = (1 - n.river * 0.9) * n.ground;
-    ctx.drawImage(ground.canvas, 0, 0, W, H);
-    ctx.globalAlpha = 1;
-    drawRiver(n.river, T);
-
-    const hog = hogPlacement();
-    drawWarmth(n.warm, T, hog);
-
-    if (n.hog > 0.01) {
-      // Ёжик моргает примерно раз в четыре секунды
-      if (T > scene.blinkAt + 0.16) scene.blinkAt = T + 2.5 + Math.random() * 3.5;
-      const blink = T > scene.blinkAt ? 0.1 : 1;
-      const float = n.river * Math.sin(T * 1.4) * 6 * hog.s;
-      ctx.globalAlpha = n.hog;
-      Art.drawHedgehog(ctx, hog.x, hog.y + float + n.river * 26 * hog.s, hog.s, {
-        t: T, needles: scene.needles, blink, look: ptr.active ? clamp((ptr.x - hog.x) / W, -1, 1) : 0,
-      });
-      ctx.globalAlpha = 1;
-      // калька: белая вуаль прямо над Ёжиком
-      if (n.kalka > 0.01) {
-        const kw = 420 * hog.s, kh = 260 * hog.s;
-        ctx.globalAlpha = clamp(n.kalka, 0, 1) * n.hog;
-        ctx.drawImage(Art.PUFF, hog.x - kw / 2, hog.y - kh / 2, kw, kh);
-        ctx.globalAlpha = 1;
-      }
-    }
-
-    ctx.drawImage(fogFront.render(n.fog, n.spread, T), 0, 0, W, H);
-    flies.draw(ctx, T, n.flies, clamp(Math.min(W, H) / 800, 0.6, 1.2));
-
-    // виньетка — края кадра темнее, как в старом кино
-    const v = ctx.createRadialGradient(W / 2, H * 0.45, Math.min(W, H) * 0.35, W / 2, H * 0.5, Math.max(W, H) * 0.8);
-    v.addColorStop(0, 'rgba(4,6,14,0)');
-    v.addColorStop(1, 'rgba(4,6,14,.6)');
-    ctx.fillStyle = v;
-    ctx.fillRect(0, 0, W, H);
-
+    if (!bgHidden) render(dt, u, s);
     requestAnimationFrame(frame);
   }
 
+  function render(dt, u, s) {
+    const camX = walk.x - hogScreenX();
+    const hue = opt.hue;
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    // кино чуть-чуть мерцает, как плёнка в проекторе
+    const flicker = reduceMotion ? 0 : (Math.sin(T * 23) * Math.sin(T * 7.1)) * 0.012;
+
+    Art.drawSky(ctx, W, H, hue);
+    stars.draw(ctx, W, H, T, Z.stars);
+    drawConstellations(Z.lines);
+    const moonR = clamp(Math.min(W, H) * 0.042, 18, 46);
+    Art.drawMoon(ctx, W * 0.8 - walk.x * 0.004 % W, H * (W < 700 ? 0.1 : 0.17), moonR, 1 - 0.55 * bell(0.2, 0.3, 0.55, 0.62, u));
+
+    drawHills(camX, hue);
+    drawForest(camX, hue);
+
+    // далёкая Лошадь в конце — та самая, о которой думает Ёжик
+    const farHorse = 0.32 * S(0.9, 1, u);
+    if (farHorse > 0.01) Art.drawHorse(ctx, placeX(1, 0.3, W * 0.5), H * 0.66, H * 0.2, farHorse, T);
+
+    ctx.drawImage(fogBack.render(0.4 * Z.fog + 0.1, Z.spread, T), 0, 0, W, H);
+
+    // Лошадь в овраге
+    const horseA = Math.max(0.9 * bell(0.17, 0.23, 0.38, 0.45, u), now.horse);
+    if (horseA > 0.01) {
+      const hs = clamp(H * 0.44, 220, 540);
+      const hx = now.horse > 0.5 ? W * 0.72 : placeX(0.29, 0.7, W * 0.24);
+      Art.drawHorse(ctx, hx, H * 0.8 - hs * 0.3, hs, horseA, T);
+    }
+
+    // дерево и Филин на ветке
+    const owlX = placeX(0.47, 1, W * 0.1);
+    const os = clamp(Math.min(W, H) / 700, 0.6, 1.3);
+    if (owlX > -W && owlX < W * 1.6) {
+      // ветка Филина длиной 400 растёт прямо из ствола
+      const tx = owlX + 380 * os;
+      Art.drawTrunk(ctx, tx, 120 * s, groundY(camX + tx) + 10, '#060914', 2);
+    }
+    const owlA = Math.max(Z.owl, now.owl);
+    if (owlA > 0.01) {
+      const ox = now.owl > 0.5 ? W * 0.16 : owlX;
+      // зеркалим, чтобы ветка росла вправо — из ствола
+      ctx.save();
+      ctx.translate(ox, 0);
+      ctx.scale(-1, 1);
+      Art.drawOwl(ctx, 0, H * 0.33, os, owlA, T);
+      ctx.restore();
+    }
+
+    if (Z.river > 0.01) drawWater(camX, u, T);
+    drawGround(camX, u);
+
+    // пёс с узелком
+    const dogX = placeX(0.565, 1, W * 0.2);
+    if (dogX > -300 && dogX < W + 300) {
+      Art.drawDog(ctx, dogX, groundY(camX + dogX) + 6, s * 0.85, '#0d111c', T, u < 0.575);
+    }
+
+    const hx = hogScreenX();
+    let hy = groundY(walk.x) - 50 * s;
+    hy = lerp(hy, waterY() - 18 * s + Math.sin(T * 1.6) * 4 * s, Z.river);
+
+    // кто-то большой под водой
+    Art.drawDeepOne(ctx, placeX(0.735, 1, Math.sin(T * 0.3) * 40), waterY() + 60 * s, s * 1.2, Z.river * 0.9, T);
+
+    drawFire(Math.max(Z.fire, now.warm), T, hx, groundY(walk.x) - 50 * s, s);
+
+    if (T > walk.blinkAt + 0.16) walk.blinkAt = T + 2.5 + Math.random() * 3.5;
+    const blink = T > walk.blinkAt ? 0.1 : 1;
+    const hasBundle = !(u > 0.535 && u < 0.575);
+    Art.drawHedgehog(ctx, hx, hy, s, {
+      t: T, needles: opt.needles, blink, bundle: hasBundle,
+      walk: walk.phase, move: walk.move, turn: walk.turn,
+      boil: 1 + (Math.floor(T * 8) % 3),
+      look: ptr.active ? clamp((ptr.x - hx) / W, -1, 1) : 0.3,
+    });
+    if (Z.kalka > 0.01) {
+      const kw = 420 * s, kh = 260 * s;
+      ctx.globalAlpha = Z.kalka;
+      ctx.drawImage(Art.PUFF, hx - kw / 2, hy - kh / 2, kw, kh);
+      ctx.globalAlpha = 1;
+    }
+    if (Z.river > 0.01) {
+      // вода перед Ёжиком: он наполовину в реке
+      const wy = waterY();
+      const g = ctx.createLinearGradient(hx - 170 * s, 0, hx + 170 * s, 0);
+      g.addColorStop(0, 'rgba(20,34,58,0)');
+      g.addColorStop(0.25, 'rgba(20,34,58,.78)');
+      g.addColorStop(0.75, 'rgba(20,34,58,.78)');
+      g.addColorStop(1, 'rgba(20,34,58,0)');
+      ctx.globalAlpha = Z.river;
+      ctx.fillStyle = g;
+      ctx.fillRect(hx - 170 * s, wy, 340 * s, 70 * s);
+      ctx.fillStyle = 'rgba(210,225,240,.45)';
+      ctx.fillRect(hx - 120 * s, wy - 1, 240 * s, 1.5);
+      ctx.globalAlpha = 1;
+    }
+
+    drawTitle(1 - S(0.008, 0.035, u));
+
+    ctx.drawImage(fogFront.render(Z.fog, Z.spread, T), 0, 0, W, H);
+    drawForeground(camX);
+    flies.draw(ctx, T, Z.flies, clamp(Math.min(W, H) / 800, 0.6, 1.2));
+
+    // виньетка — края кадра темнее, как в старом кино
+    const v = ctx.createRadialGradient(W / 2, H * 0.45, Math.min(W, H) * 0.32, W / 2, H * 0.5, Math.max(W, H) * 0.8);
+    v.addColorStop(0, 'rgba(4,6,14,0)');
+    v.addColorStop(1, `rgba(4,6,14,${0.62 + flicker * 4})`);
+    ctx.fillStyle = v;
+    ctx.fillRect(0, 0, W, H);
+    if (flicker) {
+      ctx.fillStyle = flicker > 0 ? `rgba(255,250,235,${flicker})` : `rgba(0,0,0,${-flicker})`;
+      ctx.fillRect(0, 0, W, H);
+    }
+    // соринка на плёнке, изредка
+    if (!reduceMotion && hash(Math.floor(T * 12)) > 0.965) {
+      const k = Math.floor(T * 12);
+      ctx.strokeStyle = 'rgba(230,225,210,.35)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      const x = hash(k + 0.1) * W, y = hash(k + 0.2) * H;
+      ctx.moveTo(x, y);
+      ctx.quadraticCurveTo(x + 14, y + 8, x + 6 + hash(k + 0.3) * 30, y + 26);
+      ctx.stroke();
+    }
+  }
+
   /* ================================================================
-   * 2. Главы: какая сейчас на экране?
+   * 2. Субтитры, титры глав, счётчик кадров
    * ================================================================ */
 
-  const sceneEls = $$('[data-scene]');
-  function pickScene() {
-    const mid = window.innerHeight * 0.5;
-    let best = null, bestD = Infinity;
-    for (const el of sceneEls) {
-      const r = el.getBoundingClientRect();
-      if (r.bottom < 0 || r.top > window.innerHeight) continue;
-      const d = r.top <= mid && r.bottom >= mid ? 0 : Math.min(Math.abs(r.top - mid), Math.abs(r.bottom - mid));
-      if (d < bestD) { bestD = d; best = el; }
-    }
-    if (best) scene.target = preset(best.dataset.scene);
-  }
-  window.addEventListener('scroll', pickScene, { passive: true });
+  const lines = $$('#script li').map((li) => ({
+    at: +li.dataset.at,
+    html: li.innerHTML,
+    quote: li.hasAttribute('data-quote'),
+    chapter: li.dataset.chapter,
+    name: li.dataset.name,
+  }));
+  const chapters = lines.filter((l) => l.chapter);
+  const subEl = $('#subtitle');
+  const interEl = $('#intertitle');
+  const screenEl = $('.screen');
+  const hintEl = $('#scrollhint');
+  const frameEl = $('#frame');
+  const hud = $('#hud');
+  const desk = $('#code');
+  const covers = [$('#code'), $('#stars')];
+  let shownLine = -1, shownChapter = null, subTimer = 0;
 
-  const chapterIO = new IntersectionObserver((entries) => {
-    for (const e of entries) if (e.isIntersecting) e.target.classList.add('is-in');
-  }, { threshold: 0.25 });
-  $$('.chapter').forEach((el) => chapterIO.observe(el));
+  function showLine(i) {
+    if (i === shownLine) return;
+    shownLine = i;
+    subEl.classList.remove('is-on');
+    clearTimeout(subTimer);
+    subTimer = setTimeout(() => {
+      const l = lines[i];
+      if (!l) return;
+      subEl.innerHTML = l.html;
+      subEl.classList.toggle('is-quote', l.quote);
+      subEl.classList.add('is-on');
+    }, 380);
+  }
+
+  function showChapter(c) {
+    if (c === shownChapter) return;
+    shownChapter = c;
+    interEl.classList.remove('is-on');
+    if (!c) return;
+    setTimeout(() => {
+      if (shownChapter !== c) return;
+      $('.intertitle__num', interEl).textContent = c.chapter;
+      $('.intertitle__name', interEl).textContent = c.name;
+      interEl.classList.add('is-on');
+    }, 500);
+  }
+
+  function onScroll() {
+    progress = clamp((window.scrollY - filmTop) / filmLen, 0, 1);
+    // субтитр выбираем по тому месту, куда Ёжик идёт
+    const u = progress;
+    let idx = 0;
+    for (let i = 0; i < lines.length; i++) if (lines[i].at <= u + 0.004) idx = i;
+    showLine(idx);
+    showChapter(chapters.find((c) => u >= c.at - 0.004 && u < c.at + 0.032) || null);
+    hintEl.classList.toggle('is-gone', window.scrollY > 40);
+    frameEl.textContent = String(Math.round(progress * 14800)).padStart(5, '0');
+
+    const filmEnd = film.getBoundingClientRect().bottom;
+    screenEl.classList.toggle('is-off', filmEnd < window.innerHeight * 0.75);
+    const r = desk.getBoundingClientRect();
+    hud.classList.toggle('on-paper', r.top < 30 && r.bottom > 30);
+    bgHidden = covers.some((el) => {
+      const b = el.getBoundingClientRect();
+      return b.top <= 0 && b.bottom >= window.innerHeight;
+    });
+  }
+  window.addEventListener('scroll', onScroll, { passive: true });
+
+  /* ================================================================
+   * Звук леса. Ни одного звукового файла: шум ветра, сверчки,
+   * Филин и треск костра собираются из генераторов прямо в браузере.
+   * ================================================================ */
+
+  const Sound = (() => {
+    let ac = null, master = null, on = false;
+    let wind, river, fireG;
+    let nextCricket = 0, nextHoot = 0, nextCrack = 0;
+
+    function noise(brown) {
+      const len = ac.sampleRate * 2;
+      const b = ac.createBuffer(1, len, ac.sampleRate);
+      const d = b.getChannelData(0);
+      let lastV = 0;
+      for (let i = 0; i < len; i++) {
+        const w = Math.random() * 2 - 1;
+        if (brown) { lastV = (lastV + 0.02 * w) / 1.02; d[i] = lastV * 3.5; } else d[i] = w;
+      }
+      return b;
+    }
+    function bed(buf, type, freq, q) {
+      const src = ac.createBufferSource();
+      src.buffer = buf; src.loop = true;
+      const f = ac.createBiquadFilter();
+      f.type = type; f.frequency.value = freq; f.Q.value = q;
+      const g = ac.createGain();
+      g.gain.value = 0;
+      src.connect(f).connect(g).connect(master);
+      src.start();
+      return g;
+    }
+    function start() {
+      ac = new (window.AudioContext || window.webkitAudioContext)();
+      master = ac.createGain();
+      master.gain.value = 0;
+      master.connect(ac.destination);
+      const brown = noise(true), white = noise(false);
+      wind = bed(brown, 'lowpass', 520, 0.4);
+      river = bed(white, 'bandpass', 900, 0.5);
+      fireG = bed(brown, 'lowpass', 260, 0.7);
+      this.white = white;
+    }
+    // сверчок: три коротких писка на высокой ноте
+    function chirp(t, vol) {
+      const f = 4300 + Math.random() * 500;
+      for (let k = 0; k < 3; k++) {
+        const o = ac.createOscillator();
+        const g = ac.createGain();
+        o.frequency.value = f;
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(vol, t + 0.006);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.03);
+        o.connect(g).connect(master);
+        o.start(t); o.stop(t + 0.04);
+        t += 0.05;
+      }
+    }
+    // Филин: «у-ху» — две низкие ноты
+    function hoot(t, vol) {
+      [[0, 0.32, 390, 360], [0.5, 0.55, 370, 330]].forEach(([at, dur, f1, f2]) => {
+        const o = ac.createOscillator();
+        const g = ac.createGain();
+        o.type = 'sine';
+        o.frequency.setValueAtTime(f1, t + at);
+        o.frequency.linearRampToValueAtTime(f2, t + at + dur);
+        g.gain.setValueAtTime(0, t + at);
+        g.gain.linearRampToValueAtTime(vol, t + at + 0.08);
+        g.gain.linearRampToValueAtTime(0, t + at + dur);
+        o.connect(g).connect(master);
+        o.start(t + at); o.stop(t + at + dur + 0.05);
+      });
+    }
+    // костёр: щелчки
+    function crack(t, vol, buf) {
+      const src = ac.createBufferSource();
+      src.buffer = buf;
+      const f = ac.createBiquadFilter();
+      f.type = 'highpass'; f.frequency.value = 1800;
+      const g = ac.createGain();
+      g.gain.setValueAtTime(vol, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.03 + Math.random() * 0.04);
+      src.connect(f).connect(g).connect(master);
+      src.start(t, Math.random() * 1.5, 0.08);
+    }
+    const api = {
+      get on() { return on; },
+      toggle() {
+        if (!ac) start.call(api);
+        on = !on;
+        if (ac.state === 'suspended') ac.resume();
+        master.gain.setTargetAtTime(on ? 0.9 : 0, ac.currentTime, 0.4);
+        return on;
+      },
+      update(z, dt, p) {
+        if (!ac || !on) return;
+        const t = ac.currentTime;
+        wind.gain.setTargetAtTime(0.12 + z.fog * 0.22, t, 0.5);
+        river.gain.setTargetAtTime(z.river * 0.16, t, 0.5);
+        fireG.gain.setTargetAtTime(z.fire * 0.25, t, 0.5);
+        if (t > nextCricket && z.crickets > 0.2) {
+          chirp(t + 0.05, 0.018 * z.crickets);
+          nextCricket = t + 0.25 + Math.random() * 1.2;
+        }
+        if (t > nextHoot && Math.max(z.owl, now.owl) > 0.5) {
+          hoot(t + 0.1, 0.12);
+          nextHoot = t + 5 + Math.random() * 4;
+        }
+        if (t > nextCrack && Math.max(z.fire, now.warm) > 0.3) {
+          crack(t + 0.02, 0.25 * Math.max(z.fire, now.warm), api.white);
+          nextCrack = t + 0.05 + Math.random() * 0.4;
+        }
+      },
+    };
+    return api;
+  })();
+
+  const soundBtn = $('#sound');
+  soundBtn.addEventListener('click', () => {
+    const isOn = Sound.toggle();
+    soundBtn.setAttribute('aria-pressed', String(isOn));
+    $('b', soundBtn).textContent = isOn ? 'вкл' : 'выкл';
+  });
 
   /* ================================================================
    * 3. Многоярусный станок
@@ -450,7 +864,7 @@
       const s = clamp(Math.min(w, h) / 420, 0.5, 1.4);
       const hx = w * 0.42, hy = pGround.yAt(w * 0.42) - 50 * s;
       Art.drawHedgehog(g, hx, hy, s, {
-        t, needles: params.needles, needleLen: params.needleLen,
+        t, needles: params.needles, needleLen: params.needleLen, boil: 1 + (Math.floor(t * 8) % 3),
         blink: (t % 4.2) > 4.05 ? 0.1 : 1,
       });
       g.drawImage(pFog.render(params.fog, 1, t), 0, 0, w, h);
@@ -674,46 +1088,39 @@
    * ================================================================ */
 
   function initConsole() {
-    const say = (text) => text;
+    const toggle = (key) => { opt[key] = opt[key] ? 0 : 1; return opt[key]; };
     const api = {
       туман(v) {
-        if (v === undefined) { delete scene.override.fog; delete scene.override.back; return say('Туман снова живёт сам по себе.'); }
-        v = clamp(+v || 0, 0, 3);
-        scene.override.fog = v;
-        scene.override.back = v * 0.6;
-        return say(v === 0 ? 'Туман рассеялся. Видно далеко-далеко.' : `Туман: ${v}. Чтобы вернуть как было — туман()`);
+        if (v === undefined) { opt.fog = null; return 'Туман снова живёт сам по себе.'; }
+        opt.fog = clamp(+v || 0, 0, 3);
+        return opt.fog === 0 ? 'Туман рассеялся. Видно далеко-далеко.' : `Туман: ${opt.fog}. Вернуть как было — туман()`;
       },
       звёзды(n = 260) {
         n = clamp(Math.round(+n || 0), 0, 6000);
         stars.setCount(n);
-        return say(`На небе ${n} звёзд. Ёжик бы обрадовался.`);
+        return `На небе ${n} звёзд. Ёжик бы обрадовался.`;
       },
       лошадь() {
-        scene.override.horse = scene.override.horse ? 0 : 1;
-        if (!scene.override.horse) delete scene.override.horse;
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-        return say(scene.override.horse ? 'Лошадь!.. Лошадь!.. (посмотри наверх страницы)' : 'Лошадь ушла в туман.');
+        return toggle('horse') ? 'Лошадь!.. Лошадь!.. (она справа, в тумане)' : 'Лошадь ушла в туман.';
       },
       филин() {
-        scene.override.owl = scene.override.owl ? 0 : 1;
-        if (!scene.override.owl) delete scene.override.owl;
-        return say(scene.override.owl ? 'Угу. Угу.' : 'Филин улетел.');
+        return toggle('owl') ? 'Угу. Угу.' : 'Филин улетел.';
+      },
+      медвежонок() {
+        return toggle('warm') ? 'Ёжик!.. Ё-ё-жик!.. (костёр горит)' : 'Костёр погас.';
       },
       светлячки(n = 26) {
         n = clamp(Math.round(+n || 0), 0, 2000);
         flies.setCount(n);
-        scene.override.flies = n ? 1 : 0;
-        return say(`Светлячков: ${n}.`);
+        return `Светлячков: ${n}.`;
       },
       небо(hue = 218) {
-        scene.hue = ((+hue % 360) + 360) % 360;
-        return say(`Оттенок неба: ${scene.hue}. Попробуй 0, 120, 280.`);
+        opt.hue = ((+hue % 360) + 360) % 360;
+        return `Оттенок неба: ${opt.hue}. Попробуй 0, 120, 280.`;
       },
-      медвежонок() {
-        scene.override.warm = scene.override.warm ? 0 : 1;
-        if (!scene.override.warm) delete scene.override.warm;
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-        return say(scene.override.warm ? 'Ёжик!.. Ё-ё-жик!..' : 'Костёр погас.');
+      звук() {
+        soundBtn.click();
+        return Sound.on ? 'Слушай лес.' : 'Тишина.';
       },
       помощь() {
         console.log('%cКоманды:', 'font-weight:bold;color:#f2b45a');
@@ -727,19 +1134,19 @@
           'медвежонок()': 'развести костёр',
           'светлячки(200)': 'светлячки',
           'небо(300)': 'цвет неба',
+          'звук()': 'звук леса',
           'ёжик.иголки(500)': 'колючесть',
           'ёжик.моргни()': 'подмигнуть',
         });
-        return say('А ещё можно открыть вкладку Sources и почитать файлы js/art.js и js/main.js.');
+        return 'А ещё можно открыть вкладку Sources и почитать файлы js/art.js и js/main.js.';
       },
     };
     const ёжик = {
       иголки(n = 72) {
-        scene.needles = clamp(Math.round(+n || 0), 0, 3000);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-        return scene.needles === 0 ? 'Совсем без иголок! Холодно, наверное.' : `Иголок в ряду: ${scene.needles}.`;
+        opt.needles = clamp(Math.round(+n || 0), 0, 3000);
+        return opt.needles === 0 ? 'Совсем без иголок! Холодно, наверное.' : `Иголок в ряду: ${opt.needles}.`;
       },
-      моргни() { scene.blinkAt = T; return ';)'; },
+      моргни() { walk.blinkAt = T; return ';)'; },
     };
     Object.assign(window, api, { ёжик, help: api.помощь });
 
@@ -751,6 +1158,10 @@
       'font: 14px Georgia, serif; color: inherit;'
     );
   }
+
+  /* ================================================================
+   * 7. Настоящий код тумана и подсчёт строк
+   * ================================================================ */
 
   /* ================================================================
    * 7. Настоящий код тумана и подсчёт строк
@@ -782,14 +1193,16 @@
     }
   }
 
+
   /* ================================================================
    * Поехали!
    * ================================================================ */
 
   resize();
-  pickScene();
-  scene.now = { ...scene.target };
+  onScroll();
+  walk.x = progress * LW;
   requestAnimationFrame((t) => { last = t; frame(t); });
+  window.addEventListener('load', () => { measure(); onScroll(); });
   initMultiplane();
   initPlayground();
   initStarCount();
